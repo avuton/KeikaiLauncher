@@ -65,6 +65,15 @@ public class LaunchableActivity {
         mUserSerial = -1;
     }
 
+    public LaunchableActivity(@NonNull final Intent intent, @NonNull final String activityLabel,
+                              @NonNull final Drawable icon) {
+        mLaunchIntent = intent;
+        mActivityLabel = activityLabel;
+        mActivityIcon = icon;
+        mIconResource = -1;
+        mUserSerial = -1;
+    }
+
     @RequiresApi(api = Build.VERSION_CODES.LOLLIPOP)
     public LaunchableActivity(@NonNull final Intent intent, @NonNull final String activityLabel,
                               @NonNull final Drawable icon, final long userHandle) {
