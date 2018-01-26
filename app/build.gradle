@@ -55,6 +55,9 @@ android {
     dependencies {
         implementation 'com.android.support:support-annotations:27.0.2'
     }
+    lintOptions{
+        disable 'MissingTranslation'
+    }
 }
 
 /**
@@ -73,7 +76,7 @@ static String[] getGithubInfo(final String gitInput, final String lookFor) {
     if (index == -1) {
         info = null;
     } else {
-        final int endName = gitInput.indexOf('/', index)
+        final int endName = gitInput.lastIndexOf('/')
 
         if (endName == -1) {
             info = null;
