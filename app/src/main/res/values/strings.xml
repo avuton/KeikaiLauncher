@@ -13,7 +13,9 @@
   ~ limitations under the License.
   -->
 
-<resources>
+<resources
+    xmlns:tools="http://schemas.android.com/tools"
+    tools:ignore="MissingTranslation" >
     <string name="app_name" translatable="false">Keikai Launcher</string>
     <string name="title_activity_search" translatable="false">Keikai Launcher</string>
     <string name="action_settings">Settings</string>

@@ -49,7 +49,7 @@
             android:background="@null"
             android:ellipsize="end"
             android:hint="@string/search_view_hint"
-            android:imeActionId="@+id/actionGo"
+            android:imeActionId="@+id/login"
             android:imeActionLabel="@string/launch"
             android:imeOptions="actionGo"
             android:inputType="text"
