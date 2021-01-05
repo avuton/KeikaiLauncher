@@ -24,9 +24,11 @@ import android.content.res.Resources;
 import android.graphics.Bitmap;
 import android.graphics.drawable.BitmapDrawable;
 import android.graphics.drawable.Drawable;
+import android.os.Build;
 import android.support.annotation.DrawableRes;
 import android.support.annotation.NonNull;
 import android.support.annotation.Nullable;
+import android.support.annotation.RequiresApi;
 import android.util.Log;
 
 
@@ -43,6 +45,8 @@ public class LaunchableActivity {
 
     private final Object mLock = new Object();
 
+    private final long mUserSerial;
+
     private Drawable mActivityIcon;
 
     private long mLastLaunchTime;
@@ -58,6 +62,17 @@ public class LaunchableActivity {
         mLaunchIntent = intent;
         mActivityLabel = activityLabel;
         mIconResource = iconResource;
+        mUserSerial = -1;
+    }
+
+    @RequiresApi(api = Build.VERSION_CODES.LOLLIPOP)
+    public LaunchableActivity(@NonNull final Intent intent, @NonNull final String activityLabel,
+                              @NonNull final Drawable icon, final long userHandle) {
+        mLaunchIntent = intent;
+        mActivityLabel = activityLabel;
+        mActivityIcon = icon;
+        mIconResource = -1;
+        mUserSerial = userHandle;
     }
 
     /**
@@ -91,9 +106,14 @@ public class LaunchableActivity {
         }
     }
 
+    @RequiresApi(api = Build.VERSION_CODES.JELLY_BEAN_MR1)
+    public long getUserSerial() {
+        return mUserSerial;
+    }
+
     @Nullable
     public Drawable getActivityIcon(final Context context, final int iconSizePixels) {
-        if (!isIconLoaded()) {
+        if (!isIconLoaded() && mIconResource != -1) {
             synchronized (mLock) {
                 try {
                     final PackageManager pm = context.getPackageManager();

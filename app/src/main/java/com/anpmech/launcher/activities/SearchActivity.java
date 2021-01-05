@@ -23,17 +23,22 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.ActivityInfo;
+import android.content.pm.LauncherActivityInfo;
+import android.content.pm.LauncherApps;
 import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
 import android.content.res.Configuration;
 import android.content.res.Resources;
 import android.database.ContentObserver;
+import android.graphics.drawable.Drawable;
 import android.hardware.display.DisplayManager;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.UserHandle;
+import android.os.UserManager;
 import android.preference.PreferenceManager;
 import android.provider.Settings;
 import android.support.annotation.NonNull;
@@ -62,6 +67,7 @@ import android.widget.GridView;
 import android.widget.PopupMenu;
 import android.widget.TextView;
 import android.widget.Toast;
+
 import com.anpmech.launcher.BuildConfig;
 import com.anpmech.launcher.LaunchableActivity;
 import com.anpmech.launcher.LaunchableActivityPrefs;
@@ -72,6 +78,7 @@ import com.anpmech.launcher.monitor.PackageChangeCallback;
 import com.anpmech.launcher.monitor.PackageChangedReceiver;
 
 import java.util.Collection;
+import java.util.ListIterator;
 
 public class SearchActivity extends Activity
         implements SharedPreferences.OnSharedPreferenceChangeListener, PackageChangeCallback {
@@ -231,6 +238,33 @@ public class SearchActivity extends Activity
         return hasNavBar;
     }
 
+    private static Intent getLaunchableIntent(final ComponentName componentName) {
+        final Intent launchIntent = Intent.makeMainActivity(componentName);
+
+        launchIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK |
+                Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED);
+
+        return launchIntent;
+    }
+
+    @RequiresApi(api = Build.VERSION_CODES.LOLLIPOP)
+    private void addToAdapter(@NonNull final LaunchableAdapter<LaunchableActivity> adapter,
+                              @NonNull final Iterable<LauncherActivityInfo> infoList) {
+        final String thisCanonicalName = getClass().getCanonicalName();
+        final UserManager manager = (UserManager) getSystemService(Context.USER_SERVICE);
+
+        for (final LauncherActivityInfo info : infoList) {
+            if(!thisCanonicalName.startsWith(info.getName())) {
+                final Intent launchIntent = getLaunchableIntent(info.getComponentName());
+                final String label = info.getLabel().toString();
+                final Drawable icon = info.getBadgedIcon(R.dimen.app_icon_size);
+                final long serno = manager.getSerialNumberForUser(info.getUser());
+
+                adapter.add(new LaunchableActivity(launchIntent, label, icon, serno));
+            }
+        }
+    }
+
     private void addToAdapter(@NonNull final LaunchableAdapter<LaunchableActivity> adapter,
             @NonNull final Iterable<ResolveInfo> infoList,
             final boolean useReadCache) {
@@ -242,12 +276,9 @@ public class SearchActivity extends Activity
                 final ActivityInfo activityInfo = info.activityInfo;
                 final ComponentName name =
                         new ComponentName(activityInfo.packageName, activityInfo.name);
-                final Intent launchIntent = Intent.makeMainActivity(name);
+                final Intent launchIntent = getLaunchableIntent(name);
                 final int iconResource = info.getIconResource();
                 final String label;
-
-                launchIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK |
-                        Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED);
 
                 if (prefs.contains(activityInfo.packageName) && useReadCache) {
                     label = prefs.getString(activityInfo.packageName, null);
@@ -293,23 +324,33 @@ public class SearchActivity extends Activity
         final LaunchableActivityPrefs launchableprefs = new LaunchableActivityPrefs(this);
 
         hideKeyboard();
-        try {
-            // this is where an APP is actually started
-            startActivity(launchableActivity.getLaunchIntent());
-            mSearchEditText.setText(null);
-            launchableActivity.setLaunchTime();
-            launchableActivity.addUsage();
-            launchableprefs.writePreference(launchableActivity);
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.LOLLIPOP) {
+            final UserManager userManager = (UserManager) getSystemService(Context.USER_SERVICE);
+            final LauncherApps launcher = (LauncherApps) getSystemService(Context.LAUNCHER_APPS_SERVICE);
+            final long userSerial = launchableActivity.getUserSerial();
+            final UserHandle userHandle = userManager.getUserForSerialNumber(userSerial);
 
-            mAdapter.sortApps(this);
-        } catch (final ActivityNotFoundException e) {
-            if (BuildConfig.DEBUG) {
-                throw e;
-            } else {
-                final String notFound = getString(R.string.activity_not_found);
+            launcher.startMainActivity(launchableActivity.getComponent(), userHandle,
+                    null, Bundle.EMPTY);
+        } else {
+            try {
+                // this is where an APP is actually started
+                startActivity(launchableActivity.getLaunchIntent());
+                mSearchEditText.setText(null);
+                launchableActivity.setLaunchTime();
+                launchableActivity.addUsage();
+                launchableprefs.writePreference(launchableActivity);
 
-                Log.e(TAG, notFound, e);
-                Toast.makeText(this, notFound, Toast.LENGTH_SHORT).show();
+                mAdapter.sortApps(this);
+            } catch (final ActivityNotFoundException e) {
+                if (BuildConfig.DEBUG) {
+                    throw e;
+                } else {
+                    final String notFound = getString(R.string.activity_not_found);
+
+                    Log.e(TAG, notFound, e);
+                    Toast.makeText(this, notFound, Toast.LENGTH_SHORT).show();
+                }
             }
         }
     }
@@ -343,12 +384,30 @@ public class SearchActivity extends Activity
         final Object object = getLastNonConfigurationInstance();
 
         if (object == null) {
-            final PackageManager pm = getPackageManager();
-            final Collection<ResolveInfo> infoList = getLaunchableResolveInfos(pm, null);
-            final int infoListSize = infoList.size();
-            adapter = new LaunchableAdapter<>(this, R.layout.app_grid_item, infoListSize);
+            if (android.os.Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                final UserManager manager = (UserManager) getSystemService(Context.USER_SERVICE);
+                final LauncherApps launcherApps = (LauncherApps) getSystemService(Context.LAUNCHER_APPS_SERVICE);
+                final ListIterator<UserHandle> iter = manager.getUserProfiles().listIterator();
+                int count = 0;
 
-            addToAdapter(adapter, infoList, true);
+                while(iter.hasNext()) {
+                    count += launcherApps.getActivityList(null, iter.next()).size();
+                }
+
+                adapter = new LaunchableAdapter<>(this, R.layout.app_grid_item, count);
+
+                while(iter.hasPrevious()) {
+                    addToAdapter(adapter, launcherApps.getActivityList(null, iter.previous()));
+                }
+            } else {
+                final PackageManager pm = getPackageManager();
+                final Collection<ResolveInfo> infoList = getLaunchableResolveInfos(pm, null);
+                final int infoListSize = infoList.size();
+
+                adapter = new LaunchableAdapter<>(this, R.layout.app_grid_item, infoListSize);
+
+                addToAdapter(adapter, infoList, true);
+            }
 
             adapter.sortApps(this);
             adapter.notifyDataSetChanged();
